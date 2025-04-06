@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>幸运大转盘抽奖</title>
+    <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
     <style>
         body {
             font-family: 'Microsoft YaHei', sans-serif;
@@ -12,7 +13,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             padding: 20px;
             box-sizing: border-box;
@@ -21,14 +22,14 @@
         h1 {
             color: #e74c3c;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
         
         .container {
             position: relative;
             width: 300px;
             height: 300px;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
         
         .wheel {
@@ -82,6 +83,7 @@
             cursor: pointer;
             transition: all 0.3s;
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            margin-top: 15px;
         }
         
         .btn:hover {
@@ -103,22 +105,111 @@
             font-weight: bold;
             color: #e74c3c;
             height: 30px;
+            text-align: center;
         }
         
         .message {
-            margin-top: 15px;
+            margin-top: 10px;
             color: #7f8c8d;
             font-size: 14px;
+            text-align: center;
+        }
+        
+        .user-info {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        .error {
+            color: #e74c3c;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none;
+        }
+        
+        .user-profile {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        
+        .user-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            margin-right: 15px;
+            border: 2px solid #e74c3c;
+        }
+        
+        .user-name {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .hidden {
+            display: none;
         }
     </style>
 </head>
 <body>
     <h1>幸运大转盘</h1>
-    <div class="container">
+    
+    <div class="user-info" id="userInfoForm">
+        <div class="form-group">
+            <label for="name">您的姓名</label>
+            <input type="text" id="name" placeholder="请输入真实姓名">
+            <div class="error" id="nameError">请输入姓名</div>
+        </div>
+        
+        <div class="form-group">
+            <label for="phone">手机号码</label>
+            <input type="tel" id="phone" placeholder="请输入手机号码">
+            <div class="error" id="phoneError">请输入正确的手机号码</div>
+        </div>
+        
+        <div class="user-profile hidden" id="userProfile">
+            <img src="" class="user-avatar" id="userAvatar">
+            <div class="user-name" id="userNickname"></div>
+        </div>
+        
+        <button class="btn" id="authBtn">微信授权登录</button>
+        <button class="btn hidden" id="submitBtn">提交信息并抽奖</button>
+    </div>
+    
+    <div class="container hidden" id="lotteryContainer">
         <div class="pointer"></div>
         <div class="wheel" id="wheel"></div>
     </div>
-    <button class="btn" id="spinBtn">开始抽奖</button>
+    
+    <button class="btn hidden" id="spinBtn">开始抽奖</button>
     <div class="result" id="result"></div>
     <div class="message" id="message"></div>
 
@@ -132,23 +223,163 @@
             { text: "神秘大奖", color: "#e74c3c", probability: 0.05 }
         ];
         
-        // 初始化转盘
+        // DOM元素
+        const userInfoForm = document.getElementById('userInfoForm');
+        const lotteryContainer = document.getElementById('lotteryContainer');
         const wheel = document.getElementById('wheel');
         const spinBtn = document.getElementById('spinBtn');
         const resultEl = document.getElementById('result');
         const messageEl = document.getElementById('message');
+        const authBtn = document.getElementById('authBtn');
+        const submitBtn = document.getElementById('submitBtn');
+        const nameInput = document.getElementById('name');
+        const phoneInput = document.getElementById('phone');
+        const nameError = document.getElementById('nameError');
+        const phoneError = document.getElementById('phoneError');
+        const userProfile = document.getElementById('userProfile');
+        const userAvatar = document.getElementById('userAvatar');
+        const userNickname = document.getElementById('userNickname');
         
-        // 检查是否已经抽过奖
-        const hasParticipated = localStorage.getItem('hasParticipated');
+        // 用户数据
+        let userData = {
+            name: '',
+            phone: '',
+            avatar: '',
+            nickname: '',
+            hasParticipated: false
+        };
         
-        if (hasParticipated) {
-            spinBtn.disabled = true;
-            spinBtn.textContent = '您已参与过抽奖';
-            messageEl.textContent = '每个设备只能参与一次抽奖哦~';
+        // 初始化检查是否已参与
+        function init() {
+            const savedData = localStorage.getItem('lotteryUserData');
+            if (savedData) {
+                userData = JSON.parse(savedData);
+                if (userData.hasParticipated) {
+                    showMessage('您已参与过抽奖', true);
+                    showUserInfo();
+                }
+            }
+        }
+        
+        // 显示用户信息
+        function showUserInfo() {
+            if (userData.name && userData.phone) {
+                nameInput.value = userData.name;
+                phoneInput.value = userData.phone;
+                nameInput.disabled = true;
+                phoneInput.disabled = true;
+            }
+            
+            if (userData.avatar && userData.nickname) {
+                userAvatar.src = userData.avatar;
+                userNickname.textContent = userData.nickname;
+                userProfile.classList.remove('hidden');
+                authBtn.classList.add('hidden');
+            }
+        }
+        
+        // 验证姓名
+        function validateName() {
+            const name = nameInput.value.trim();
+            if (!name) {
+                nameError.style.display = 'block';
+                return false;
+            }
+            nameError.style.display = 'none';
+            return true;
+        }
+        
+        // 验证手机号
+        function validatePhone() {
+            const phone = phoneInput.value.trim();
+            const phoneRegex = /^1[3-9]\d{9}$/;
+            
+            if (!phone) {
+                phoneError.textContent = '请输入手机号码';
+                phoneError.style.display = 'block';
+                return false;
+            }
+            
+            if (!phoneRegex.test(phone)) {
+                phoneError.textContent = '请输入正确的手机号码';
+                phoneError.style.display = 'block';
+                return false;
+            }
+            
+            phoneError.style.display = 'none';
+            return true;
+        }
+        
+        // 显示消息
+        function showMessage(msg, isError = false) {
+            messageEl.textContent = msg;
+            messageEl.style.color = isError ? '#e74c3c' : '#7f8c8d';
+        }
+        
+        // 微信授权
+        function wechatAuth() {
+            if (!validateName() || !validatePhone()) return;
+            
+            // 这里需要替换为实际的微信JS-SDK配置
+            // 实际项目中需要后端支持获取签名等信息
+            wx.config({
+                debug: false, // 开启调试模式
+                appId: '你的AppID', // 必填，公众号的唯一标识
+                timestamp: 0, // 必填，生成签名的时间戳
+                nonceStr: '', // 必填，生成签名的随机串
+                signature: '', // 必填，签名
+                jsApiList: ['getUserInfo'] // 必填，需要使用的JS接口列表
+            });
+            
+            wx.ready(function() {
+                wx.getUserInfo({
+                    success: function(res) {
+                        userData.avatar = res.userInfo.avatarUrl;
+                        userData.nickname = res.userInfo.nickName;
+                        
+                        userAvatar.src = userData.avatar;
+                        userNickname.textContent = userData.nickname;
+                        userProfile.classList.remove('hidden');
+                        authBtn.classList.add('hidden');
+                        submitBtn.classList.remove('hidden');
+                        
+                        showMessage('微信授权成功');
+                    },
+                    fail: function(err) {
+                        showMessage('微信授权失败，请重试', true);
+                        console.error(err);
+                    }
+                });
+            });
+            
+            wx.error(function(res) {
+                showMessage('微信初始化失败，请重试', true);
+                console.error(res);
+            });
+        }
+        
+        // 提交用户信息
+        function submitUserInfo() {
+            if (!validateName() || !validatePhone()) return;
+            
+            userData.name = nameInput.value.trim();
+            userData.phone = phoneInput.value.trim();
+            
+            // 保存用户数据
+            localStorage.setItem('lotteryUserData', JSON.stringify(userData));
+            
+            // 隐藏表单，显示抽奖转盘
+            userInfoForm.classList.add('hidden');
+            lotteryContainer.classList.remove('hidden');
+            spinBtn.classList.remove('hidden');
+            
+            // 初始化转盘
+            createWheel();
         }
         
         // 创建转盘扇区
         function createWheel() {
+            wheel.innerHTML = '';
             let cumulativeAngle = 0;
             const total = prizes.length;
             
@@ -176,13 +407,8 @@
             });
         }
         
-        // 初始化转盘
-        createWheel();
-        
         // 抽奖函数
-        spinBtn.addEventListener('click', function() {
-            if (hasParticipated) return;
-            
+        function spinWheel() {
             spinBtn.disabled = true;
             resultEl.textContent = '';
             
@@ -208,14 +434,29 @@
             
             // 旋转结束后显示结果
             setTimeout(() => {
-                resultEl.textContent = `恭喜您获得: ${prizes[selectedIndex].text}`;
+                resultEl.textContent = `恭喜 ${userData.name} 获得: ${prizes[selectedIndex].text}`;
                 
                 // 标记为已参与
-                localStorage.setItem('hasParticipated', 'true');
+                userData.hasParticipated = true;
+                localStorage.setItem('lotteryUserData', JSON.stringify(userData));
+                spinBtn.disabled = true;
                 spinBtn.textContent = '您已参与过抽奖';
-                messageEl.textContent = '每个设备只能参与一次抽奖哦~';
+                showMessage('每个设备只能参与一次抽奖哦~');
+                
+                // 这里可以添加将数据发送到服务器的代码
+                // sendDataToServer(selectedIndex);
             }, 4000);
-        });
+        }
+        
+        // 事件监听
+        nameInput.addEventListener('blur', validateName);
+        phoneInput.addEventListener('blur', validatePhone);
+        authBtn.addEventListener('click', wechatAuth);
+        submitBtn.addEventListener('click', submitUserInfo);
+        spinBtn.addEventListener('click', spinWheel);
+        
+        // 初始化
+        init();
     </script>
 </body>
 </html>
